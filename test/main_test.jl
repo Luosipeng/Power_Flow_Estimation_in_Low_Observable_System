@@ -1,10 +1,14 @@
 #############################
 # Multi-task Gaussian Process - Full Sensor Version
 #############################
-
-# include("../src/get_sample_from_ieee37.jl")
-# include("../src/get_ieee37_multitask_data.jl")
 include("../src/implement_data.jl")
+include("../src/generate_series_data.jl")
+include("../ios/read_mat.jl")
+include("../src/extract_requested_dataset_multibatch.jl")
+include("../src/build_complete_multisensor_data.jl")
+include("../src/data_processing.jl")
+include("../src/multi_task_gaussian.jl")
+include("../src/gaussian_prediction.jl")
 
 using Flux
 using LinearAlgebra
@@ -14,33 +18,34 @@ using Random
 using ProgressMeter
 using DataFrames
 using JLD2
+using MAT
 using CSV
 
 # Set plot defaults
 gr(fontfamily="Arial", legendfontsize=7, guidefontsize=9, titlefontsize=9)
 
-
 println("\n" * "="^70)
 println("Starting Multi-task GP with Full Sensor Suite")
 println("="^70)
 
-Random.seed!(42)
-
-println("="^70)
-println("Multi-task Gaussian Process (MTGP) - Full Sensor Version")
-println("="^70)
+# Random.seed!(42)
 
 println("\n[1] Loading data...")
-feeder_dir = "D:/luosipeng/Deep_Learning_in_Distribution_System/data"
-res = time_series_ieee37(
-    feeder_dir;
-    dt_s=0.1,
-    hours=24.0,
-    sample_every=1,
-    collect=[:voltage_bus, :total_power, :bus_injection],
-    extract_ymatrix=true
+
+(batch_data_1, batch_data_2, batch_data_3, batch_data_4,
+            batch_data_5, batch_data_6, batch_data_7, batch_data_8,
+            batch_data_9, batch_data_10, batch_data_11, batch_data_12,
+            batch_data_13, batch_data_14, batch_data_15, batch_data_16, 
+            batch_data_17, batch_data_18) = read_mat()
+
+ds = extract_requested_dataset_multibatch(
+    (batch_data_1, batch_data_2, batch_data_3, batch_data_4,
+    batch_data_5, batch_data_6, batch_data_7, batch_data_8,
+    batch_data_9, batch_data_10, batch_data_11, batch_data_12,
+    batch_data_13, batch_data_14, batch_data_15, batch_data_16,
+    batch_data_17, batch_data_18)
 )
-ds = extract_requested_dataset(res)
+
 
 println("\n[2] Building complete multi-sensor dataset...")
 data = build_complete_multisensor_data(
@@ -80,7 +85,6 @@ end
 println("\n[5] Generating visualizations...")
 
 # Select diverse sensors for visualization
-# Pick 2 SCADA, 2 AMI, 1 PMU (if available)
 scada_indices = findall(x -> x == :SCADA, data.sensor_types)
 ami_indices = findall(x -> x == :AMI, data.sensor_types)
 pmu_indices = findall(x -> x == :PMU, data.sensor_types)
@@ -102,30 +106,63 @@ selected_indices = selected_indices[1:min(9, length(selected_indices))]
 plots_list = []
 
 for s in selected_indices
-    x_test = range(minimum(data.times[s]), maximum(data.times[s]), length=200)
-    μ_pred, σ_pred = multitask_gp_predict(result, s, collect(Float32, x_test))
-    
-    p = plot(x_test, μ_pred,
-                ribbon = 1.96 .* σ_pred,
-                label = "Pred (95% CI)",
-                xlabel = "Time (hours)",
-                ylabel = "Value",
-                title = data.sensor_names[s],
-                linewidth = 2,
-                fillalpha = 0.3,
-                legend = :topright,
-                size = (500, 350),
-                margin = 4Plots.mm,
-                titlefontsize = 8)
-    
-    scatter!(p, data.times[s], data.values[s],
-                label = "Data",
-                markersize = 1.5,
-                alpha = 0.6,
-                color = :red)
-    
-    push!(plots_list, p)
+    sensor_name = data.sensor_names[s]
+    sensor_type = data.sensor_types[s]
+
+    if sensor_type == :PMU
+        # PMU：使用原始高频时间戳进行预测与绘图
+        x_test = data.times[s]  # 原始0.1s时间戳（小时单位）
+        μ_pred, σ_pred = multitask_gp_predict(result, s, x_test)
+
+        p = plot(x_test, μ_pred,
+                 ribbon = 1.96 .* σ_pred,
+                 label = "GP Pred (95% CI)",
+                 xlabel = "Time (hours)",
+                 ylabel = "Value",
+                 title = sensor_name * " (PMU, 0.1s)",
+                 linewidth = 1.5,
+                 fillalpha = 0.25,
+                 legend = :topright,
+                 size = (600, 350),
+                 margin = 4Plots.mm)
+
+        # 高频原始测量点：用细线或小点以避免淹没
+        scatter!(p, data.times[s], data.values[s],
+                 label = "Data (0.1s)",
+                 markersize = 1.0,
+                 alpha = 0.5,
+                 color = :red,
+                 markerstrokewidth = 0)
+
+        push!(plots_list, p)
+    else
+        # 非PMU：保持原逻辑（200个均匀点）
+        x_test = range(minimum(data.times[s]), maximum(data.times[s]), length=200)
+        μ_pred, σ_pred = multitask_gp_predict(result, s, collect(Float32, x_test))
+
+        p = plot(x_test, μ_pred,
+                 ribbon = 1.96 .* σ_pred,
+                 label = "Pred (95% CI)",
+                 xlabel = "Time (hours)",
+                 ylabel = "Value",
+                 title = sensor_name,
+                 linewidth = 2,
+                 fillalpha = 0.3,
+                 legend = :topright,
+                 size = (500, 350),
+                 margin = 4Plots.mm,
+                 titlefontsize = 8)
+
+        scatter!(p, data.times[s], data.values[s],
+                 label = "Data",
+                 markersize = 1.5,
+                 alpha = 0.6,
+                 color = :red)
+
+        push!(plots_list, p)
+    end
 end
+
 
 # Combined plot
 n_plots = length(plots_list)
