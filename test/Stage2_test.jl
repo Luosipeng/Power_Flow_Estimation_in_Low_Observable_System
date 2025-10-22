@@ -17,8 +17,8 @@ include("../ios/read_mat.jl")
 branch = read_topology_mat("D:/luosipeng/matpower8.1/pf_parallel_out/topology.mat")
 daily_predictions = generate_daily_predictions(result, 1, 1)
 observed_matrix_Z, observed_pairs = build_observed_matrix_Z(daily_predictions)
-observed_matrix_Z[:,1] = -observed_matrix_Z[:,1]  # P 取负号
-observed_matrix_Z[:,2] = -observed_matrix_Z[:,2]  # Q 取负号
+observed_matrix_Z[:,1] = -observed_matrix_Z[:,1]/100  # P 取负号
+observed_matrix_Z[:,2] = -observed_matrix_Z[:,2]/100  # Q 取负号
 noise_precision_β = build_noise_precision_beta(daily_predictions)
 
 # 可选：如果你明确观测到根节点电压为 1.0，可保留这一观测
