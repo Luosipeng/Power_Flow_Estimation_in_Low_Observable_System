@@ -28,8 +28,6 @@ println("\n" * "="^70)
 println("Starting Multi-task GP with Full Sensor Suite")
 println("="^70)
 
-# Random.seed!(42)
-
 println("\n[1] Loading data...")
 
 (batch_data_1, batch_data_2, batch_data_3, batch_data_4,

@@ -62,3 +62,13 @@ function read_batch_mat(path::AbstractString)
         close(mat)
     end
 end
+
+function read_topology_mat(path::AbstractString)
+    mat = matopen(path)
+    try
+        branch_ext_raw = read(mat, "branch_ext_raw")
+        return branch_ext_raw
+    finally
+        close(mat)
+    end
+end

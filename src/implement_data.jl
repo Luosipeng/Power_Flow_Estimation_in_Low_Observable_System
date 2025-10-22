@@ -443,3 +443,44 @@ function generate_1min_resolution_predictions(result)
     return unified_result
 end
 
+function generate_daily_predictions(result,start_idx=1, count=864_000)
+    total_points = 864_000
+    start_idx < 1 && error("start_idx 必须 ≥ 1")
+    start_idx > total_points && error("start_idx 超过全天长度")
+    count < 1 && error("count 必须 ≥ 1")
+    stop_idx = min(start_idx + count - 1, total_points)
+
+    println("\n[10] 生成采样区间 $start_idx:$stop_idx 的多任务 GP 预测...")
+    dt_hours = 0.1f0 / 3600f0
+    t_start = minimum(minimum.(result.data.times))
+    idx_range = start_idx:stop_idx
+    t_grid = Float32.(t_start .+ dt_hours .* (idx_range .- 1))
+
+    daily_predictions = Dict{String, Any}(
+        "time_hours" => t_grid,
+        "time_minutes" => t_grid .* 60f0,
+        "num_timepoints" => length(t_grid),
+        "start_index" => start_idx,
+        "stop_index" => stop_idx,
+        "sensors" => Dict{String, Any}()
+    )
+
+    @showprogress for s in 1:result.data.S
+        name = result.data.sensor_names[s]
+        try
+            μ_pred, σ_pred = multitask_gp_predict(result, s, t_grid)
+            daily_predictions["sensors"][name] = Dict(
+                "type" => String(result.data.sensor_types[s]),
+                "prediction_mean" => μ_pred,
+                "prediction_std" => σ_pred,
+                "ci_lower" => μ_pred .- 1.96f0 .* σ_pred,
+                "ci_upper" => μ_pred .+ 1.96f0 .* σ_pred
+            )
+        catch e
+            @warn "全天预测失败: $name -> $e"
+        end
+    end
+
+    println("  ✓ 区间预测完成: $(length(daily_predictions["sensors"])) 个传感器")
+    return daily_predictions
+end
