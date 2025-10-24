@@ -1,6 +1,9 @@
 # -----------------------
 # Topology helpers
 # -----------------------
+# -----------------------
+# Topology helpers
+# -----------------------
 
 function fraction_available_data(Z::AbstractMatrix)
     total = length(Z); total == 0 && return 0.0f0
@@ -87,36 +90,20 @@ function cal_bTb_j(i, B_mean, Σb_list)
 end
 
 function build_incidence_matrix_td(n_nodes, branch)
+    in_service = branch[:, 11] .== 1
+    active_idx = findall(in_service)
+    n_branches = length(active_idx)
 
-    # Calculate total number of branches
-    branch_in_service = branch[:, 11] .== 1
-    n_branches = size(branch[branch_in_service,:], 1)
-    
-    # Extract start and end nodes for all branches, and mark branch type
-    # Type markers: 1=AC, 2=DC, 3=Converter
+    A = zeros(Float64, n_branches, n_nodes)
     branch_data = Vector{Tuple{Int, Int, Int}}(undef, n_branches)
-    
-    # Add AC branches
-    for i in 1:size(branch[branch_in_service,:], 1)
-        # Ensure smaller node number as starting node
-        node1 = Int(branch[branch_in_service,:][i, 1])
-        node2 = Int(branch[branch_in_service,:][i, 2])
-        from = min(node1, node2)
-        to = max(node1, node2)
-        branch_data[i] = (from, to, i)  # (start node, end node, type, original index)
+
+    for (row_idx, b_idx) in enumerate(active_idx)
+        from = Int(branch[b_idx, 1])
+        to = Int(branch[b_idx, 2])
+        A[row_idx, from] = 1.0
+        A[row_idx, to] = -1.0
+        branch_data[row_idx] = (from, to, b_idx)
     end
-    
-    # Sort by starting node
-    sort!(branch_data, by = x -> (x[1], x[2]))
-    
-    # Create incidence matrix
-    A = zeros(n_branches, n_nodes)
-    
-    # Build incidence matrix based on sorted branches
-    for (idx, (from, to, _)) in enumerate(branch_data)
-        A[idx, from] = 1   # Outflow from node is positive
-        A[idx, to] = -1    # Inflow to node is negative
-    end
-    
+
     return A, branch_data
 end

@@ -8,6 +8,7 @@ include("../src/implement_data.jl")
 include("../src/matrix_completion.jl")
 include("../ios/read_mat.jl")
 include("../src/lindistflow.jl")
+include("../src/power_flow.jl")
 
 function run_stage2_test()
     branch = read_topology_mat("D:/luosipeng/matpower8.1/pf_parallel_out/topology.mat")
@@ -47,7 +48,6 @@ function run_stage2_test()
     latent_dim = size(A_mean, 2)
 
     history = Dict{Symbol, Vector{Float64}}(
-        :pagg => Float64[], :qagg => Float64[], :obj_phys => Float64[],
         :rel_change => Float64[]
     )
 
@@ -75,14 +75,18 @@ function run_stage2_test()
         end
 
         X_new = Array{Float64}(A_mean * B_mean')
-        P_inj = X_new[:, 1]; Q_inj = X_new[:, 2]; Vb = X_new[:, 5]
+        P_inj = X_new[:, 1]./10; Q_inj = X_new[:, 2]./10; Vb = X_new[:, 5];
 
-        Pij_sol, Qij_sol, V_sol, Proot_sol, Qroot_sol, Pinj_sol, Qinj_sol =
-            lindistflow(P_inj, Q_inj, Vb, branch, root_bus, Vref, observed_pairs)
+        # Pij_sol, Qij_sol, V_sol, Proot_sol, Qroot_sol, Pinj_sol, Qinj_sol =
+        #     lindistflow(P_inj, Q_inj, Vb, branch, root_bus, Vref, observed_pairs)
+        V_sol, θ_sol, Pinj_sol, Qinj_sol, Vr_sol, Vi_sol =
+            ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, 0.0, observed_pairs)
 
         X_new[:, 5] .= V_sol
-        X_new[:, 1] .= Pinj_sol
-        X_new[:, 2] .= Qinj_sol
+        X_new[:, 1] .= Pinj_sol.*10
+        X_new[:, 2] .= Qinj_sol.*10
+        X_new[:, 3] .= Vr_sol
+        X_new[:, 4] .= Vi_sol
 
         numerator = norm(X_new - X_old)
         denominator = max(norm(X_old), 1e-12)

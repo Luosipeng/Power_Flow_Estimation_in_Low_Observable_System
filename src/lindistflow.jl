@@ -3,11 +3,13 @@ using Gurobi
 using Ipopt
 
 function lindistflow(P_inj, Q_inj, Vb, branch, root_bus, Vref, observed_pairs; verbose=true)
-    model = Model(Ipopt.Optimizer)
-    set_optimizer_attribute(model, "sb", "yes")
-    set_optimizer_attribute(model, "print_level", 0)  # Output verbosity
-    set_optimizer_attribute(model, "max_iter", 3000)  # Maximum iterations
-    set_optimizer_attribute(model, "tol", 1e-6)       # Convergence tolerance
+    model = Model(Gurobi.Optimizer)
+    set_silent(model)
+    # model = Model(Ipopt.Optimizer)
+    # set_optimizer_attribute(model, "sb", "yes")
+    # set_optimizer_attribute(model, "print_level", 0)  # Output verbosity
+    # set_optimizer_attribute(model, "max_iter", 3000)  # Maximum iterations
+    # set_optimizer_attribute(model, "tol", 1e-6)       # Convergence tolerance
 
     n = length(Vb)
     in_service = branch[:, 11] .== 1
