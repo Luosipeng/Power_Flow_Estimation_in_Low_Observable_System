@@ -126,7 +126,7 @@ function ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref, obs
 
     model = Model(Ipopt.Optimizer)
     set_optimizer_attribute(model, "sb", "yes")
-    set_optimizer_attribute(model, "print_level", 3)
+    set_optimizer_attribute(model, "print_level", 0)
 
     ΩP = Set{Int}(); ΩQ = Set{Int}(); ΩV = Set{Int}()
     for (i, j) in observed_pairs
