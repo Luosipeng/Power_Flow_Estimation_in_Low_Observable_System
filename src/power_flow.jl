@@ -140,8 +140,8 @@ function ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref, obs
 
     @variable(model, Vr[1:n])
     @variable(model, Vi[1:n])
-    @variable(model, Pinj_var[1:n])
-    @variable(model, Qinj_var[1:n])
+    @variable(model, Pinj_var[1:n] )
+    @variable(model, Qinj_var[1:n] )
     @variable(model, Pg >= 0)
     @variable(model, Qg)
 
@@ -180,7 +180,7 @@ function ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref, obs
         @NLconstraint(model, Qcalc[i] - Qinj_var[i] - Cg[i] * Qg == 0)
     end
 
-    λ = 1e-6
+    λ = 1e-1
     @objective(model, Min,
         λ * (sum(Pinj_var[i]^2 for i in unobsP) +
              sum(Qinj_var[i]^2 for i in unobsQ) 

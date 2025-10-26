@@ -23,41 +23,41 @@ function build_complete_multisensor_data(ds; max_points_per_sensor::Int=864000)
     # Define all sensors based on your specification
     pmu_sensors = [
         # PMU-20: voltage magnitude
-        ("20", :Vmag),
+        ("3", :Vmag),
         # PMU-20: voltage real parts
-        ("20", :V_real),
+        ("3", :V_real),
         # PMU-20: voltage imaginary parts
-        ("20", :V_imag),
+        ("3", :V_imag),
     ]
 
     scada_sensors = [
         # Bus 3: voltage magnitude
-        ("3", :Vmag),
+        ("8", :Vmag),
         # Bus 6: voltage magnitude
-        ("6", :Vmag),
+        ("15", :Vmag),
         # Bus 19: voltage magnitude
-        ("19", :Vmag),
+        ("32", :Vmag),
     ]
     
     ami_sensors = [
         # Bus 2: active and reactive power
-        ("2", :P_kW),
-        ("2", :Q_kVAR),
-        # Bus 4: active and reactive power
-        ("4", :P_kW),
-        ("4", :Q_kVAR),
-        # Bus 5: active and reactive power
-        ("5", :P_kW),
-        ("5", :Q_kVAR),
+        ("18", :P_kW),
+        ("18", :Q_kVAR),
+        # Bus 33: active and reactive power
+        ("22", :P_kW),
+        ("22", :Q_kVAR),
+        # Bus 10: active and reactive power
+        ("25", :P_kW),
+        ("25", :Q_kVAR),
         # Bus 21: active and reactive power
-        ("21", :P_kW),
-        ("21", :Q_kVAR),
+        ("29", :P_kW),
+        ("29", :Q_kVAR),
         # Bus 23: active and reactive power
-        ("23", :P_kW),
-        ("23", :Q_kVAR),
-        # Bus 30: active and reactive power
         ("30", :P_kW),
         ("30", :Q_kVAR),
+        # Bus 33: active and reactive power
+        ("33", :P_kW),
+        ("33", :Q_kVAR),
     ]
     
     # Process SCADA sensors

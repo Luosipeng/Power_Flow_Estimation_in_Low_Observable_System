@@ -17,8 +17,8 @@ function run_stage2_test()
     noise_precision_β = build_noise_precision_beta(daily_predictions)
 
     tolerance = 1e-6
-    c = 1e-4
-    d = 1e-4
+    c = 1e-7
+    d = 1e-7
     max_iter = 400
 
     root_bus = 1
