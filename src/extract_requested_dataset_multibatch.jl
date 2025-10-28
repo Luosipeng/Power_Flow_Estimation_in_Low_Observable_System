@@ -1,4 +1,4 @@
-function extract_requested_dataset_multibatch(batch_data;pmu_buses=[3], scada_buses=[8,15,32], ami_buses=[18,22,25,29,30,33])    
+function extract_requested_dataset_multibatch(batch_data;pmu_buses=[3], scada_buses=[8,12,15,32], ami_buses=[18,22,25,29,30,33])    
     # 拼接数据
     batch_data_1 = batch_data[1];   batch_data_2 = batch_data[2];
     batch_data_3 = batch_data[3];   batch_data_4 = batch_data[4];

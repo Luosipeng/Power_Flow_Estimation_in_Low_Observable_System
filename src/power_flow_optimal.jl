@@ -1,3 +1,4 @@
+
 using JuMP
 using Ipopt
 using LinearAlgebra
@@ -17,7 +18,7 @@ function build_ybus(branch, n)
     return Y
 end
 
-function ac_nodal_injection_test(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref, observed_pairs; verbose=true, λ_unobs=1e-1, λ_meas=1e3)
+function ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref, observed_pairs; verbose=true)
     n = length(P_inj)
     Y = build_ybus(branch, n)
     G = real.(Y); B = imag.(Y)
@@ -34,23 +35,18 @@ function ac_nodal_injection_test(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref
         j == 4 && push!(ΩVi, i)
         j == 5 && push!(ΩV, i)
     end
-
-    ΩP_vec = collect(ΩP)
-    ΩQ_vec = collect(ΩQ)
-    ΩV_vec = collect(ΩV)
-
-    unobsP = setdiff(collect(1:n), ΩP_vec)
-    unobsQ = setdiff(collect(1:n), ΩQ_vec)
+    unobsP = setdiff(1:n, collect(ΩP))
+    unobsQ = setdiff(1:n, collect(ΩQ))
+    unobsVr = setdiff(1:n, collect(ΩVr))
+    unobsVi = setdiff(1:n, collect(ΩVi))
+    unobsV = setdiff(1:n, collect(ΩV))
 
     @variable(model, Vr[1:n])
     @variable(model, Vi[1:n])
-    @variable(model, Pinj_var[1:n])
-    @variable(model, Qinj_var[1:n])
+    @variable(model, Pinj_var[1:n] )
+    @variable(model, Qinj_var[1:n] )
     @variable(model, Pg >= 0)
     @variable(model, Qg)
-    @variable(model, δP[1:n])
-    @variable(model, δQ[1:n])
-    @variable(model, δV[1:n])
 
     Vmin2 = 0.85^2
     Vmax2 = 1.05^2
@@ -64,28 +60,22 @@ function ac_nodal_injection_test(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref
     @constraint(model, Pinj_var[root_bus] == 0)
     @constraint(model, Qinj_var[root_bus] == 0)
 
-    for i in 1:n
-        if i in ΩV
-            @NLconstraint(model, Vr[i]^2 + Vi[i]^2 == (Vb[i] + δV[i])^2)
-        else
-            @constraint(model, δV[i] == 0)
-        end
+    for i in ΩV
+        @NLconstraint(model, Vr[i]^2 + Vi[i]^2 == Vb[i]^2)
     end
 
-    for i in 1:n
-        if i in ΩP
-            @constraint(model, Pinj_var[i] - δP[i] == P_inj[i])
-        else
-            @constraint(model, δP[i] == 0)
-        end
-    end
+    # for i in ΩVr
+    #     @constraint(model, Vr[i] == Vbr[i])
+    # end
+    # for i in ΩVi
+    #     @constraint(model, Vi[i] == Vbi[i])
+    # end
 
-    for i in 1:n
-        if i in ΩQ
-            @constraint(model, Qinj_var[i] - δQ[i] == Q_inj[i])
-        else
-            @constraint(model, δQ[i] == 0)
-        end
+    for i in ΩP
+        @constraint(model, Pinj_var[i] == P_inj[i])
+    end
+    for i in ΩQ
+        @constraint(model, Qinj_var[i] == Q_inj[i])
     end
 
     Cg = zeros(Float64, n); Cg[root_bus] = 1.0
@@ -100,17 +90,12 @@ function ac_nodal_injection_test(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref
         @NLconstraint(model, Qcalc[i] - Qinj_var[i] - Cg[i] * Qg == 0)
     end
 
+    λ = 1e-1
     @objective(model, Min,
-        λ_unobs * (
-            sum(Pinj_var[i]^2 for i in unobsP) +
-            sum(Qinj_var[i]^2 for i in unobsQ)
-        ) +
-        λ_meas * (
-            sum(δP[i]^2 for i in ΩP_vec) +
-            sum(δQ[i]^2 for i in ΩQ_vec) +
-            sum(δV[i]^2 for i in ΩV_vec)
-        )
-    )
+        λ * (sum(Pinj_var[i]^2 for i in unobsP) +
+             sum(Qinj_var[i]^2 for i in unobsQ) 
+             
+             ))
 
     set_optimizer_attribute(model, "tol", 1e-8)
     set_optimizer_attribute(model, "acceptable_tol", 1e-6)
@@ -120,22 +105,20 @@ function ac_nodal_injection_test(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref
         set_start_value(Vi[i], Vref * sin(θref))
         set_start_value(Pinj_var[i], P_inj[i])
         set_start_value(Qinj_var[i], Q_inj[i])
-        set_start_value(δP[i], 0.0)
-        set_start_value(δQ[i], 0.0)
-        set_start_value(δV[i], 0.0)
     end
     set_start_value(Pg, sum(P_inj))
     set_start_value(Qg, sum(Q_inj))
 
     optimize!(model)
 
-    status = termination_status(model)
-    if verbose
-        println("AC OPF status: ", status)
-        println("Voltage deviation max = ", maximum(abs.(sqrt.(value.(Vr).^2 .+ value.(Vi).^2) .- Vref)))
-    end
-    if !(status in (JuMP.MOI.OPTIMAL, JuMP.MOI.LOCALLY_SOLVED))
-        @warn "AC OPF did not converge to optimality (status = $(status))"
+    if termination_status(model) == MOI.OPTIMAL || termination_status(model) == MOI.LOCALLY_SOLVED
+        if verbose
+            println("Optimization converged successfully.")
+        end
+    else
+        if verbose
+            println("Warning: Optimization did not converge to optimality.")
+        end
     end
 
     Vr_sol = value.(Vr)
@@ -144,19 +127,10 @@ function ac_nodal_injection_test(P_inj, Q_inj, Vb, branch, root_bus, Vref, θref
     θ_sol = atan.(Vi_sol, Vr_sol)
     Pinj_sol = value.(Pinj_var)
     Qinj_sol = value.(Qinj_var)
-    ΔP = value.(δP)
-    ΔQ = value.(δQ)
-    ΔV = value.(δV)
 
-    return (
-        V = V_sol,
-        θ = θ_sol,
-        Pinj = Pinj_sol,
-        Qinj = Qinj_sol,
-        Vr = Vr_sol,
-        Vi = Vi_sol,
-        ΔP = ΔP,
-        ΔQ = ΔQ,
-        ΔV = ΔV
-    )
+    if verbose
+        println("Voltage deviation max = ", maximum(abs.(V_sol .- Vref)))
+    end
+
+    return V_sol, θ_sol, Pinj_sol, Qinj_sol, Vr_sol, Vi_sol
 end

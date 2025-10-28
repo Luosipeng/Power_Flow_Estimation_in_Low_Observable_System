@@ -35,6 +35,8 @@ function build_complete_multisensor_data(ds; max_points_per_sensor::Int=864000)
         ("8", :Vmag),
         # Bus 6: voltage magnitude
         ("15", :Vmag),
+        # Bus 12: voltage magnitude
+        ("12", :Vmag),
         # Bus 19: voltage magnitude
         ("32", :Vmag),
     ]

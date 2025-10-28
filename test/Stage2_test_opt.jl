@@ -10,6 +10,7 @@ include("../ios/read_mat.jl")
 include("../src/lindistflow.jl")
 include("../src/power_flow_optimal.jl")
 include("../src/likelihood_gaussian.jl")
+include("../src/physic_constraint_opf.jl")
 
 function run_stage2_test()
     branch = read_topology_mat("D:/luosipeng/matpower8.1/pf_parallel_out/topology.mat")
@@ -21,13 +22,18 @@ function run_stage2_test()
     c = 1e-7
     d = 1e-7
     max_iter = 400
+    δ = 1e-4
+    β_phys = 1e-4
+    η= 0.2
 
     root_bus = 1
-    Vref = 1.0
+    Vr_ref = 1.0
+    Vi_ref = 0.0
 
     observed_matrix_Z = Array{Float64}(observed_matrix_Z)
     noise_precision_β = Array{Float64}(noise_precision_β)
 
+    X0 = copy(observed_matrix_Z)
     svd_res = svd(observed_matrix_Z)
     r = min(5, minimum(size(observed_matrix_Z)))
     U_r = svd_res.U[:, 1:r]
@@ -76,19 +82,13 @@ function run_stage2_test()
         end
 
         X_new = Array{Float64}(A_mean * B_mean')
-        P_inj = X_new[:, 1]./10; Q_inj = X_new[:, 2]./10; Vb = X_new[:, 5]; 
+        # P_inj = X_new[:, 1]./10; Q_inj = X_new[:, 2]./10; Vb = X_new[:, 5]; 
         # Vr = X_new[:, 3]; Vi = X_new[:, 4];
 
-        # Pij_sol, Qij_sol, V_sol, Proot_sol, Qroot_sol, Pinj_sol, Qinj_sol =
-        #     lindistflow(P_inj, Q_inj, Vb, branch, root_bus, Vref, observed_pairs)
-        V_sol, θ_sol, Pinj_sol, Qinj_sol, Vr_sol, Vi_sol =
-            ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, 0.0, observed_pairs)
-
-        X_new[:, 5] .= V_sol
-        X_new[:, 1] .= Pinj_sol.*10
-        X_new[:, 2] .= Qinj_sol.*10
-        X_new[:, 3] .= Vr_sol
-        X_new[:, 4] .= Vi_sol
+        # V_sol, θ_sol, Pinj_sol, Qinj_sol, Vr_sol, Vi_sol =
+        #     ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, 0.0, observed_pairs)
+        X_refined = physic_constraint(X_new, branch, root_bus, Vr_ref, Vi_ref, observed_pairs, observed_matrix_Z, δ, β_phys, X0; verbose=false)
+        X_new = η*X_refined + (1-η)*X_new
 
         numerator = norm(X_new - X_old)
         denominator = max(norm(X_old), 1e-12)
@@ -96,6 +96,7 @@ function run_stage2_test()
         push!(history[:rel_change], rel)
         X_old = X_new
 
+        η = min(η * 1.5, 1)
         if rel < tolerance
             println("Converged at iter=$it, rel=$(rel)")
             break
@@ -118,4 +119,3 @@ end
 
 X, history, flows, injections, elbo = run_stage2_test()
 # println("P(Z | X, β) = $(likelihood)")
-# 结构后验分布
