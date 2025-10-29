@@ -64,7 +64,7 @@ function cal_b_mean_j(j, A_mean, Σb_j, observed_pairs, noise_precision_β, obse
     weighted_sum = zeros(Float64, d)
     for (row, col) in observed_pairs
         if col == j
-            ai = A_mean[row, :]
+            ai   = A_mean[row, :]
             β_ij = noise_precision_β[row, j]
             z_ij = observed_matrix_Z[row, j]
             weighted_sum += β_ij * ai * z_ij

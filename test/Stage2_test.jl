@@ -29,7 +29,7 @@ function run_stage2_test()
     noise_precision_β = Array{Float64}(noise_precision_β)
 
     svd_res = svd(observed_matrix_Z)
-    r = min(5, minimum(size(observed_matrix_Z)))
+    r = 15
     U_r = svd_res.U[:, 1:r]
     Σ_r = svd_res.S[1:r]
     Vt_r = svd_res.Vt[1:r, :]
@@ -76,23 +76,25 @@ function run_stage2_test()
         end
 
         X_new = Array{Float64}(A_mean * B_mean')
-        P_inj = X_new[:, 1]./10; Q_inj = X_new[:, 2]./10; Vb = X_new[:, 5]; 
-        # Vr = X_new[:, 3]; Vi = X_new[:, 4];
+        # P_inj = X_new[:, 1]./10; Q_inj = X_new[:, 2]./10; Vb = X_new[:, 5]; 
+        # # Vr = X_new[:, 3]; Vi = X_new[:, 4];
 
-        # Pij_sol, Qij_sol, V_sol, Proot_sol, Qroot_sol, Pinj_sol, Qinj_sol =
-        #     lindistflow(P_inj, Q_inj, Vb, branch, root_bus, Vref, observed_pairs)
-        V_sol, θ_sol, Pinj_sol, Qinj_sol, Vr_sol, Vi_sol =
-            ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, 0.0, observed_pairs)
+        # # Pij_sol, Qij_sol, V_sol, Proot_sol, Qroot_sol, Pinj_sol, Qinj_sol =
+        # #     lindistflow(P_inj, Q_inj, Vb, branch, root_bus, Vref, observed_pairs)
+        # V_sol, θ_sol, Pinj_sol, Qinj_sol, Vr_sol, Vi_sol =
+        #     ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, 0.0, observed_pairs)
 
-        X_new[:, 5] .= V_sol
-        X_new[:, 1] .= Pinj_sol.*10
-        X_new[:, 2] .= Qinj_sol.*10
-        X_new[:, 3] .= Vr_sol
-        X_new[:, 4] .= Vi_sol
+        # X_new[:, 5] .= V_sol
+        # X_new[:, 1] .= Pinj_sol.*10
+        # X_new[:, 2] .= Qinj_sol.*10
+        # X_new[:, 3] .= Vr_sol
+        # X_new[:, 4] .= Vi_sol
 
         numerator = norm(X_new - X_old)
         denominator = max(norm(X_old), 1e-12)
         rel = numerator / denominator
+
+        println("Iter $it: rel_change = $rel")
         push!(history[:rel_change], rel)
         X_old = X_new
 
