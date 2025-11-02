@@ -1,6 +1,6 @@
 function build_observed_matrix_Z(daily_predictions; monitor_buses::AbstractSet{Int}=Set{Int}())
     sensors = get(daily_predictions, "sensors", Dict{String, Any}())
-    num_nodes, num_cols = 33, 5
+    num_nodes, num_cols = 37, 5
     column_map = Dict(
         "p" => 1, "pb" => 1,
         "q" => 2, "qb" => 2,

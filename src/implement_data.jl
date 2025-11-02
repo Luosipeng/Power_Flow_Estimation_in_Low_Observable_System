@@ -225,6 +225,10 @@ function generate_1min_resolution_predictions(result)
     end
 
     selected_for_plot = unique(selected_for_plot)[1:min(9, length(unique(selected_for_plot)))]
+    selected_for_plot = filter(!=("PMU-3-V_real"), selected_for_plot)
+    selected_for_plot = filter(!=("PMU-3-V_imag"), selected_for_plot)
+    push!(selected_for_plot, "AMI-36-P")
+    push!(selected_for_plot, "AMI-37-P")
 
     plots_short = []
     time_window = 6.0

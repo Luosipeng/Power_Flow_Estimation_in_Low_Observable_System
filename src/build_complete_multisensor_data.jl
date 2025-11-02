@@ -28,6 +28,7 @@ function build_complete_multisensor_data(ds; max_points_per_sensor::Int=864000)
         ("3", :V_real),
         # PMU-20: voltage imaginary parts
         ("3", :V_imag),
+
     ]
 
     scada_sensors = [
@@ -55,8 +56,11 @@ function build_complete_multisensor_data(ds; max_points_per_sensor::Int=864000)
         ("29", :P_kW),
         ("29", :Q_kVAR),
         # Bus 23: active and reactive power
-        ("30", :P_kW),
-        ("30", :Q_kVAR),
+        ("36", :P_kW),
+        ("36", :Q_kVAR),
+        # Bus 24: active and reactive power
+        ("37", :P_kW),
+        ("37", :Q_kVAR),
         # Bus 33: active and reactive power
         ("33", :P_kW),
         ("33", :Q_kVAR),
@@ -78,7 +82,7 @@ function build_complete_multisensor_data(ds; max_points_per_sensor::Int=864000)
         t, v = smart_downsample(t_hours, v_raw, max_points_per_sensor)
         
         if std(v) < 1e-6 || !all(isfinite.(v))
-            println("  ⚠️  Skip SCADA-$bus-$phase-$measurement (invalid data)")
+            println("  ⚠️  Skip SCADA-$bus-$measurement (invalid data)")
             continue
         end
         
@@ -113,7 +117,7 @@ function build_complete_multisensor_data(ds; max_points_per_sensor::Int=864000)
         t, v = smart_downsample(t_hours, v_raw, max_points_per_sensor)
         
         if std(v) < 1e-6 || !all(isfinite.(v))
-            println("  ⚠️  Skip AMI-$bus-$phase-$measurement (invalid data)")
+            println("  ⚠️  Skip AMI-$bus-$measurement (invalid data)")
             continue
         end
         

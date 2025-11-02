@@ -9,7 +9,7 @@ include("../src/build_noise_precision_beta.jl")
 include("../src/implement_data.jl")
 include("../src/matrix_completion.jl")
 include("../ios/read_mat.jl")
-include("../src/lindistflow.jl")
+include("../src/ac_dc_power_flow.jl")
 include("../src/power_flow.jl")
 include("../src/get_topology.jl")
 
@@ -21,18 +21,23 @@ function get_total_len(result)::Int
 end
 
 # 扩展返回内容：返回该次采样的监测损失 loss_sample，同时允许传入 monitor_buses
-function run_stage2(branch, daily_predictions; monitor_buses=Set([8, 12]))
+function run_stage2(branch, branchDC, daily_predictions; monitor_buses=Set([8, 12]))
     observed_matrix_Z, observed_pairs, monitored_obs =
         build_observed_matrix_Z(daily_predictions; monitor_buses=monitor_buses)
     noise_precision_β = build_noise_precision_beta(daily_predictions)
 
     tolerance = 1e-6
-    c = 1e-4
-    d = 1e-4
+    c = 1e-7
+    d = 1e-7
     max_iter = 400
 
     root_bus = 1
     Vref = 1.0
+    inv_bus = 18
+    rec_bus = 1
+    eta = 0.9
+    nac = 33
+    ndc = 4
 
     observed_matrix_Z = Array{Float64}(observed_matrix_Z)
     noise_precision_β = Array{Float64}(noise_precision_β)
@@ -91,15 +96,14 @@ function run_stage2(branch, daily_predictions; monitor_buses=Set([8, 12]))
         Q_inj = X_new[:, 2] ./ 10
         Vb    = X_new[:, 5]
 
-        V_sol, θ_sol, Pinj_sol, Qinj_sol, Vr_sol, Vi_sol =
-            ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, 0.0, observed_pairs, verbose=false)
+        Vr_ac_sol, Vi_ac_sol, V_ac_sol, Pinj_ac_sol, Qinj_ac_sol, V_dc_sol, Pinj_dc_sol = ac_dc_power_flow(branch,branchDC, nac, ndc, P_inj, Q_inj, Vb, root_bus, inv_bus, rec_bus, eta, Vref, observed_pairs, false)
 
         # 回填
-        X_new[:, 5] .= V_sol
-        X_new[:, 1] .= Pinj_sol .* 10
-        X_new[:, 2] .= Qinj_sol .* 10
-        X_new[:, 3] .= Vr_sol
-        X_new[:, 4] .= Vi_sol
+        X_new[:, 5] .= vcat(V_ac_sol, V_dc_sol)
+        X_new[:, 1] .= vcat(Pinj_ac_sol.*10, Pinj_dc_sol.*10)
+        X_new[:, 2] .= vcat(Qinj_ac_sol.*10, zeros(length(Pinj_dc_sol)).*10)
+        X_new[:, 3] .= vcat(Vr_ac_sol, V_dc_sol)
+        X_new[:, 4] .= vcat(Vi_ac_sol, zeros(length(V_dc_sol)))
 
         # 收敛监控
         numerator = norm(X_new - X_old)
@@ -170,7 +174,7 @@ mutable struct RunSuccessRecord
 end
 
 # 主流程：按步长 43100 采样，遍历所有 branch，对每个 branch 累计所有采样的 Loss
-function evaluate_branches_over_samples(result, branch_list, prob_list; step=43100, tol=1e-6, monitor_buses=Set([12]))
+function evaluate_branches_over_samples(result, branch_list, branchDC, prob_list; step=43100, tol=1e-6, monitor_buses=Set([12]))
     total_len = 90000
     start_counts = collect(90000:step:total_len)
 
@@ -186,7 +190,7 @@ function evaluate_branches_over_samples(result, branch_list, prob_list; step=431
         # 遍历所有备选拓扑（branch）
         @showprogress for (idx, brch) in enumerate(branch_list)
             try
-                res = run_stage2(brch, daily_predictions; monitor_buses=monitor_buses)
+                res = run_stage2(brch, branchDC, daily_predictions; monitor_buses=monitor_buses)
                 hist = res.history
                 ok = !isempty(hist[:rel_change]) && last(hist[:rel_change]) ≤ tol
                 if !ok
@@ -229,15 +233,15 @@ function evaluate_branches_over_samples(result, branch_list, prob_list; step=431
 end
 
 # 顶层：准备 branch_list，并调用评估
-branch_based = read_topology_mat("D:/luosipeng/matpower8.1/pf_parallel_out/topology.mat")
+branchAC, branchDC = read_topology_mat("C:/Users/PC/Desktop/paper_case/topology_results.mat")
 branch_list, prob_list = generate_branch_list_with_prior(
-    branch_based;
+    branchAC;
     param_sets = nothing,
     param_source_rows = (35,5,1),
     per_line_cartesian = true
 )
 
-res_eval = evaluate_branches_over_samples(result, branch_list, prob_list; step=43100, tol=1e-6, monitor_buses=Set([8, 12]))
+res_eval = evaluate_branches_over_samples(result, branch_list, branchDC, prob_list; step=43100, tol=1e-6, monitor_buses=Set([8, 12]))
 
 println("Evaluation finished. total branches=$(length(branch_list))")
 println("Valid branches with at least 1 sample used = $(length(filter(r -> r.count_used>0, res_eval.records)))")

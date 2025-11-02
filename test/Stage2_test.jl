@@ -7,12 +7,12 @@ include("../src/build_noise_precision_beta.jl")
 include("../src/implement_data.jl")
 include("../src/matrix_completion.jl")
 include("../ios/read_mat.jl")
-include("../src/lindistflow.jl")
 include("../src/power_flow_optimal.jl")
 include("../src/likelihood_gaussian.jl")
+include("../src/ac_dc_power_flow.jl")
 
 function run_stage2_test()
-    branch = read_topology_mat("D:/luosipeng/matpower8.1/pf_parallel_out/topology.mat")
+    branchAC, branchDC = read_topology_mat("C:/Users/PC/Desktop/paper_case/topology_results.mat")
     daily_predictions = generate_daily_predictions(result, 1, 1)
     observed_matrix_Z, observed_pairs, monitored_obs = build_observed_matrix_Z(daily_predictions; monitor_buses=Set([8, 12]))
     noise_precision_β = build_noise_precision_beta(daily_predictions)
@@ -24,12 +24,17 @@ function run_stage2_test()
 
     root_bus = 1
     Vref = 1.0
+    inv_bus = 18
+    rec_bus = 1
+    eta = 0.9
+    nac = 33
+    ndc = 4
 
     observed_matrix_Z = Array{Float64}(observed_matrix_Z)
     noise_precision_β = Array{Float64}(noise_precision_β)
 
     svd_res = svd(observed_matrix_Z)
-    r = 15
+    r = 5
     U_r = svd_res.U[:, 1:r]
     Σ_r = svd_res.S[1:r]
     Vt_r = svd_res.Vt[1:r, :]
@@ -76,19 +81,16 @@ function run_stage2_test()
         end
 
         X_new = Array{Float64}(A_mean * B_mean')
-        # P_inj = X_new[:, 1]./10; Q_inj = X_new[:, 2]./10; Vb = X_new[:, 5]; 
-        # # Vr = X_new[:, 3]; Vi = X_new[:, 4];
+        P_inj = X_new[:, 1]./10; Q_inj = X_new[:, 2]./10; Vb = X_new[:, 5]; 
+        # Vr = X_new[:, 3]; Vi = X_new[:, 4];
 
-        # # Pij_sol, Qij_sol, V_sol, Proot_sol, Qroot_sol, Pinj_sol, Qinj_sol =
-        # #     lindistflow(P_inj, Q_inj, Vb, branch, root_bus, Vref, observed_pairs)
-        # V_sol, θ_sol, Pinj_sol, Qinj_sol, Vr_sol, Vi_sol =
-        #     ac_nodal_injection(P_inj, Q_inj, Vb, branch, root_bus, Vref, 0.0, observed_pairs)
+        Vr_ac_sol, Vi_ac_sol, V_ac_sol, Pinj_ac_sol, Qinj_ac_sol, V_dc_sol, Pinj_dc_sol = ac_dc_power_flow(branchAC,branchDC, nac, ndc, P_inj, Q_inj, Vb, root_bus, inv_bus, rec_bus, eta, Vref, observed_pairs, true)
 
-        # X_new[:, 5] .= V_sol
-        # X_new[:, 1] .= Pinj_sol.*10
-        # X_new[:, 2] .= Qinj_sol.*10
-        # X_new[:, 3] .= Vr_sol
-        # X_new[:, 4] .= Vi_sol
+        X_new[:, 5] .= vcat(V_ac_sol, V_dc_sol)
+        X_new[:, 1] .= vcat(Pinj_ac_sol.*10, Pinj_dc_sol.*10)
+        X_new[:, 2] .= vcat(Qinj_ac_sol.*10, zeros(length(Pinj_dc_sol)).*10)
+        X_new[:, 3] .= vcat(Vr_ac_sol, V_dc_sol)
+        X_new[:, 4] .= vcat(Vi_ac_sol, zeros(length(V_dc_sol)))
 
         numerator = norm(X_new - X_old)
         denominator = max(norm(X_old), 1e-12)
@@ -108,16 +110,13 @@ function run_stage2_test()
         @warn "Not below tolerance yet. tail(rel)=$(history[:rel_change][max(end-4,1):end])"
     end
     println("Loss =$( abs(monitored_obs[12][5] - X_old[12,5])/monitored_obs[12][5] * 100  + abs(monitored_obs[8][5] - X_old[8,5])/monitored_obs[8][5] * 100) %)")
-
-    elbo_result = compute_elbo_with_physics(X_old, A_mean, B_mean, Σa_list, Σb_list, γ,
-                                 observed_matrix_Z, noise_precision_β, observed_pairs)
     
 
     return (X = X_old, history = history,
             flows = (P = Pij_sol, Q = Qij_sol, V = V_sol),
-            injections = (P = Pinj_sol, Q = Qinj_sol), elbo = elbo_result)
+            injections = (P = Pinj_sol, Q = Qinj_sol))
 end
 
-X, history, flows, injections, elbo = run_stage2_test()
+X, history, flows, injections = run_stage2_test()
 # println("P(Z | X, β) = $(likelihood)")
 # 结构后验分布
