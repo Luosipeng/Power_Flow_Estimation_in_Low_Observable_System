@@ -34,6 +34,8 @@ function build_complete_multisensor_data(ds; max_points_per_sensor::Int=864000)
     scada_sensors = [
         # Bus 3: voltage magnitude
         ("8", :Vmag),
+        # Bus 9: voltage magnitude
+        ("9", :Vmag),
         # Bus 6: voltage magnitude
         ("15", :Vmag),
         # Bus 12: voltage magnitude
