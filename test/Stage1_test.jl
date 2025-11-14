@@ -9,6 +9,8 @@ include("../src/build_complete_multisensor_data.jl")
 include("../src/data_processing.jl")
 include("../src/multi_task_gaussian.jl")
 include("../src/gaussian_prediction.jl")
+include("../src/linear_imputation.jl")
+include("../src/missing_data_evaluation.jl")
 
 using Flux
 using LinearAlgebra
@@ -183,6 +185,20 @@ println("\n" * "="^70)
 println("Starting Multi-task GP (ICM/LMC) with Full Sensor Suite - No In-place")
 println("="^70)
 
+# # 完整评估：测试10%到80%缺失数据，每个百分比运行3次试验
+# evaluation_results = evaluate_missing_data_impact(
+#     data;
+#     missing_percentages = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+#     n_trials = 3,  # 每个百分比的试验次数
+#     mtgp_epochs = 100,  # MTGP训练轮数
+#     verbose = true
+# )
+
+# # 可视化结果
+# plot_missing_data_results(evaluation_results)
+
+# # 生成详细报告
+# generate_evaluation_report(evaluation_results)
 
 if result !== nothing
 unified_result = generate_1min_resolution_predictions(result)

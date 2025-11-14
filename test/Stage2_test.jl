@@ -14,7 +14,7 @@ include("../src/ac_dc_power_flow.jl")
 function run_stage2_test()
     branchAC, branchDC = read_topology_mat("C:/Users/PC/Desktop/paper_case/topology_results.mat")
     daily_predictions = generate_daily_predictions(result, 1, 1)
-    observed_matrix_Z, observed_pairs, monitored_obs = build_observed_matrix_Z(daily_predictions; monitor_buses=Set([8, 12]))
+    observed_matrix_Z, observed_pairs, monitored_obs = build_observed_matrix_Z(daily_predictions,monitor_buses = Set([8,12]))
     noise_precision_β = build_noise_precision_beta(daily_predictions)
 
     tolerance = 1e-6
@@ -81,14 +81,15 @@ function run_stage2_test()
         end
 
         X_new = Array{Float64}(A_mean * B_mean')
-        P_inj = X_new[:, 1]./10; Q_inj = X_new[:, 2]./10; Vb = X_new[:, 5]; 
-        # Vr = X_new[:, 3]; Vi = X_new[:, 4];
+        P_inj = X_new[:, 1]./100; Q_inj = X_new[:, 2]./100; Vb = X_new[:, 5]; 
+        Vbr = X_new[:, 3]; Vbi = X_new[:, 4];
 
-        Vr_ac_sol, Vi_ac_sol, V_ac_sol, Pinj_ac_sol, Qinj_ac_sol, V_dc_sol, Pinj_dc_sol = ac_dc_power_flow(branchAC,branchDC, nac, ndc, P_inj, Q_inj, Vb, root_bus, inv_bus, rec_bus, eta, Vref, observed_pairs, true)
+         Vr_ac_sol, Vi_ac_sol, V_ac_sol, Pinj_ac_sol, Qinj_ac_sol, V_dc_sol, Pinj_dc_sol = ac_dc_power_flow(branchAC,branchDC, nac, ndc, P_inj, Q_inj, Vb, Vbr, Vbi, root_bus, 1, 1.00833, inv_bus, rec_bus, eta, Vref, observed_pairs, true)
+
 
         X_new[:, 5] .= vcat(V_ac_sol, V_dc_sol)
-        X_new[:, 1] .= vcat(Pinj_ac_sol.*10, Pinj_dc_sol.*10)
-        X_new[:, 2] .= vcat(Qinj_ac_sol.*10, zeros(length(Pinj_dc_sol)).*10)
+        X_new[:, 1] .= vcat(Pinj_ac_sol.*100, Pinj_dc_sol.*100)
+        X_new[:, 2] .= vcat(Qinj_ac_sol.*100, zeros(length(Pinj_dc_sol)).*100)
         X_new[:, 3] .= vcat(Vr_ac_sol, V_dc_sol)
         X_new[:, 4] .= vcat(Vi_ac_sol, zeros(length(V_dc_sol)))
 
