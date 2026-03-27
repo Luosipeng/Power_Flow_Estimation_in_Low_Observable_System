@@ -1,0 +1,367 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{bm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+
+\geometry{margin=1in}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\GP}{\mathcal{GP}}
+\newcommand{\tr}{\mathrm{tr}}
+\newcommand{\diag}{\mathrm{diag}}
+
+\title{Mathematical Model: Multi-Task Gaussian Process and Bayesian Matrix Completion for Distribution System State Estimation}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+% ============================================================
+% 1. Abstract
+% ============================================================
+\begin{abstract}
+This document presents the mathematical formulation underlying a two-stage framework for distribution system state estimation (DSSE) under incomplete and noisy sensor measurements. In \textbf{Stage~1}, a Multi-Task Gaussian Process (MTGP) based on the Intrinsic Coregionalization Model (ICM) jointly learns the temporal dynamics across heterogeneous sensors (PMU, SCADA, AMI), providing predictive distributions that quantify epistemic uncertainty. In \textbf{Stage~2}, the MTGP predictions are assembled into a partially observed measurement matrix and completed via Bayesian low-rank matrix factorisation with physics-informed constraints derived from the linearised power-flow equations. The posterior distributions of the latent factors yield closed-form uncertainty estimates for every state variable. We detail each component's derivation, the variational update rules, and the uncertainty propagation formulae.
+\end{abstract}
+
+% ============================================================
+% 2. Multi-Task Gaussian Process
+% ============================================================
+\section{Multi-Task Gaussian Process}
+
+\subsection{Problem Setting}
+We consider $S$ sensor tasks. For task $s \in \{1,\dots,S\}$ we observe $n_s$ data pairs $\{(x_i^{(s)}, y_i^{(s)})\}_{i=1}^{n_s}$, where $x_i^{(s)} \in \R$ denotes the (normalised) time stamp and $y_i^{(s)} \in \R$ denotes the (normalised) measurement value. The total number of observations is $N = \sum_{s=1}^{S} n_s$. The goal is to learn a joint probabilistic model $f_s(x)$ for all tasks simultaneously, exploiting inter-task correlations.
+
+\subsection{Intrinsic Coregionalization Model (ICM)}
+We model $f_s(x)$ as a zero-mean\footnote{In practice a shared neural-network mean function $m_\theta(x)$ is used; see Section~\ref{sec:mean_func}.} multi-output GP whose covariance is given by the ICM kernel:
+\begin{equation}\label{eq:icm_kernel}
+  \mathrm{Cov}\!\bigl[f_s(x),\, f_t(x')\bigr]
+  = B_{st}\, k_{\text{time}}(x,x')
+  + \delta_{st}\, k_{\text{local},s}(x,x'),
+\end{equation}
+where
+\begin{itemize}[nosep]
+  \item $B = LL^\top \in \R^{S \times S}$ is a positive semi-definite task correlation matrix parameterised through its Cholesky factor $L$ (lower-triangular);
+  \item $k_{\text{time}}(x,x') = \sigma_{\text{time}}^{2}\exp\!\bigl(-\tfrac{(x-x')^{2}}{2\ell_{\text{time}}^{2}}\bigr)$ is the shared RBF kernel capturing global temporal structure;
+  \item $k_{\text{local},s}(x,x') = \sigma_{\text{local},s}^{2}\exp\!\bigl(-\tfrac{(x-x')^{2}}{2\ell_{\text{local},s}^{2}}\bigr)$ is a per-task RBF kernel modelling task-specific variation.
+\end{itemize}
+
+\subsection{Observation Model}
+The noisy observation model includes per-task Gaussian noise:
+\begin{equation}\label{eq:obs_model}
+  y_i^{(s)} = f_s(x_i^{(s)}) + \varepsilon_i^{(s)},
+  \qquad
+  \varepsilon_i^{(s)} \sim \N(0,\,\sigma_{\text{noise},s}^{2}).
+\end{equation}
+Stacking all observations, the joint covariance matrix $\bm{K} \in \R^{N \times N}$ is block-structured. The $(s,t)$-block ($n_s \times n_t$) is:
+\begin{equation}\label{eq:K_block}
+  \bm{K}^{(s,t)} = B_{st}\, \bm{K}_{\text{time}}^{(s,t)}
+  + \delta_{st}\bigl(\bm{K}_{\text{local},s}^{(s,s)} + \sigma_{\text{noise},s}^{2}\, \bm{I}_{n_s}\bigr),
+\end{equation}
+where $[\bm{K}_{\text{time}}^{(s,t)}]_{ij} = k_{\text{time}}(x_i^{(s)}, x_j^{(t)})$, and similarly for the local kernel.
+
+\subsection{Shared Neural-Network Mean Function}\label{sec:mean_func}
+A shared two-layer neural network $m_\theta: \R \to \R$ is employed:
+\begin{equation}
+  m_\theta(x) = \bm{W}_2 \,\mathrm{ReLU}(\bm{W}_1\, x + \bm{b}_1) + b_2,
+\end{equation}
+parameterised by $\theta = \{\bm{W}_1, \bm{b}_1, \bm{W}_2, b_2\}$. The same network is applied to every task, so that the residual $\bm{r} = \bm{y} - \bm{m}_\theta(\bm{x})$ is modelled by the GP.
+
+\subsection{Joint Negative Log-Marginal Likelihood}
+All hyperparameters $\Theta = \{\theta, L, \log\sigma_{\text{time}}, \log\ell_{\text{time}}, \{\log\sigma_{\text{local},s},\log\ell_{\text{local},s}, \log\sigma_{\text{noise},s}\}_{s=1}^{S}\}$ are optimised by minimising the negative log-marginal likelihood (NLL):
+\begin{equation}\label{eq:nll}
+  \mathcal{L}(\Theta) = \frac{1}{2}\,\bm{r}^\top \bm{K}^{-1}\bm{r}
+  + \frac{1}{2}\ln|\bm{K}|
+  + \frac{N}{2}\ln(2\pi),
+\end{equation}
+where $\bm{r} = \bm{y} - \bm{m}_\theta(\bm{x})$. Let $\bm{K} = \bm{L}_K \bm{L}_K^\top$ be the Cholesky decomposition (with a small jitter $\epsilon \bm{I}$ added for numerical stability). Then:
+\begin{align}
+  \bm{\alpha} &= \bm{L}_K^{-\top}(\bm{L}_K^{-1} \bm{r}), \\
+  \mathcal{L} &= \frac{1}{2}\,\bm{r}^\top \bm{\alpha}
+  + \sum_{i=1}^{N} \ln [\bm{L}_K]_{ii}
+  + \frac{N}{2}\ln(2\pi).
+\end{align}
+Gradients with respect to $\Theta$ are computed via automatic differentiation and the parameters are updated using the Adam optimiser with early stopping.
+
+\subsection{Data Normalisation}
+All inputs and outputs are standardised before training:
+\begin{equation}
+  \tilde{x} = \frac{x - \mu_x}{\sigma_x}, \qquad
+  \tilde{y}^{(s)} = \frac{y^{(s)} - \mu_{y}^{(s)}}{\sigma_{y}^{(s)}},
+\end{equation}
+where $\mu_x, \sigma_x$ are the global time mean and standard deviation, and $\mu_y^{(s)}, \sigma_y^{(s)}$ are per-task statistics. Predictions are denormalised after inference.
+
+\subsection{Predictive Distribution}
+\label{sec:gp_prediction}
+Given a test point $x_*$ for task $s$, define:
+\begin{itemize}[nosep]
+  \item Cross-covariance vector $\bm{k}_* \in \R^{N}$, where the sub-vector for task~$i$ is
+  \begin{equation}
+    \bm{k}_*^{(i)}
+    = B_{is}\, \bm{k}_{\text{time}}(\bm{x}^{(i)}, x_*)
+    + \delta_{is}\, \bm{k}_{\text{local},s}(\bm{x}^{(s)}, x_*);
+  \end{equation}
+  \item Prior test variance
+  \begin{equation}
+    k_{**} = B_{ss}\, k_{\text{time}}(x_*,x_*) + k_{\text{local},s}(x_*,x_*).
+  \end{equation}
+\end{itemize}
+
+The predictive distribution is:
+\begin{align}
+  \mu_*^{(s)} &= m_\theta(\tilde{x}_*) + \bm{k}_*^\top \bm{\alpha}, \label{eq:pred_mean}\\
+  \sigma_*^{(s)\,2} &= k_{**} - \bm{v}^\top \bm{v},
+  \qquad \bm{v} = \bm{L}_K^{-1}\bm{k}_*, \label{eq:pred_var}
+\end{align}
+and the denormalised outputs are:
+\begin{equation}\label{eq:denorm}
+  \hat{y}_*^{(s)} = \mu_*^{(s)} \cdot \sigma_y^{(s)} + \mu_y^{(s)},
+  \qquad
+  \hat{\sigma}_*^{(s)} = \sigma_*^{(s)} \cdot \sigma_y^{(s)}.
+\end{equation}
+
+% ============================================================
+% 2. Physics-Constrained Variational Bayesian Matrix Completion
+% ============================================================
+\section{Physics-Constrained Variational Bayesian Matrix Completion}
+\label{sec:bmc}
+
+\subsection{Problem Setting}
+The MTGP (or linear interpolation) predictions from Stage~1 are assembled into a measurement matrix $\bm{Z} \in \R^{m \times n}$, where each row corresponds to a valid (bus, phase) pair (excluding the slack bus and missing phases) and each column corresponds to a state variable:
+\begin{equation}
+  \bm{Z} = \begin{bmatrix}
+  P_1 & Q_1 & V_{r,1} & V_{i,1} & |V|_1 \\
+  \vdots & \vdots & \vdots & \vdots & \vdots \\
+  P_m & Q_m & V_{r,m} & V_{i,m} & |V|_m
+  \end{bmatrix} \in \R^{m \times 5}.
+\end{equation}
+Due to limited sensor placement, only a subset $\Omega \subseteq \{1,\dots,m\}\times\{1,\dots,5\}$ of entries is directly observed. The goal is to recover the full matrix $\bm{Z}$ and quantify uncertainty for every entry.
+
+\subsection{Observation Matrix Construction}
+\label{sec:obs_matrix}
+Given a three-phase distribution network with $N_{\text{bus}}$ buses, the set of valid bus-phase combinations excludes:
+\begin{itemize}[nosep]
+  \item the slack bus (bus~1, all three phases);
+  \item missing phases: buses in $\mathcal{L}_a, \mathcal{L}_b, \mathcal{L}_c$ that lack phases $a, b, c$ respectively.
+\end{itemize}
+The number of valid rows is $m = 3(N_{\text{bus}} - 1) - |\mathcal{L}_a| - |\mathcal{L}_b| - |\mathcal{L}_c|$. A bijection $\phi: (\text{bus}, \text{phase}) \mapsto \text{row index}$ maps each valid bus-phase pair to a unique row.
+
+For each sensor $s$ providing a prediction $(\hat{z}_{ij}, \hat{\sigma}_{ij})$ from Stage~1, the observed entry $(i,j) \in \Omega$ is filled with the predicted mean $z_{ij} = \hat{z}_{ij}$, and the associated heteroscedastic noise precision is:
+\begin{equation}\label{eq:beta_gp}
+  \beta_{ij}^{\text{GP}} = \frac{1}{\hat{\sigma}_{ij}^{2}}.
+\end{equation}
+For zero-load buses, $P$ and $Q$ entries are set to zero with a high precision ($\beta_{ij} = 1/0.001^2$).
+
+When using linear interpolation instead of MTGP as the Stage~1 predictor, a uniform noise precision is computed as:
+\begin{equation}\label{eq:beta_linear}
+  \beta^{\text{LN}} = \frac{\text{FAD} \cdot m \cdot n}{\| \bm{Z} - \mathcal{P}_\Omega(\bm{U}_r \bm{\Sigma}_r \bm{V}_r^\top) \|_F^2},
+\end{equation}
+where $\bm{U}_r \bm{\Sigma}_r \bm{V}_r^\top$ is the rank-$r$ truncated SVD approximation and $\mathcal{P}_\Omega$ denotes projection onto the observed set. The precision $\beta^{\text{LN}}$ is assigned only to observed entries; unobserved entries receive $\beta_{ij} = 0$.
+
+\subsection{Low-Rank Generative Model}
+We factorise $\bm{Z} \approx \bm{A}\bm{B}^\top$, where $\bm{A} \in \R^{m \times d}$ and $\bm{B} \in \R^{n \times d}$, with latent dimension $d \ll \min(m,n)$.
+
+\paragraph{Priors.} Each row of $\bm{A}$ and $\bm{B}$ has an Automatic Relevance Determination (ARD) prior:
+\begin{equation}\label{eq:prior_ab}
+  p(\bm{a}_i \mid \bm{\gamma}) = \N\!\bigl(\bm{0},\, \diag(\bm{\gamma})^{-1}\bigr),
+  \qquad
+  p(\bm{b}_j \mid \bm{\gamma}) = \N\!\bigl(\bm{0},\, \diag(\bm{\gamma})^{-1}\bigr),
+\end{equation}
+where $\bm{\gamma} = (\gamma_1,\dots,\gamma_d)^\top$ is a shared precision vector with conjugate Gamma hyper-prior $\gamma_k \sim \mathrm{Gamma}(c,d)$, where $c = d = 10^{-7}$ gives a near-uninformative prior.
+
+\paragraph{Likelihood.} For each observed (or augmented) entry $(i,j) \in \Omega'$:
+\begin{equation}\label{eq:likelihood_mc}
+  p(z_{ij} \mid \bm{a}_i, \bm{b}_j, \beta_{ij})
+  = \N\!\bigl(\bm{a}_i^\top \bm{b}_j,\, \beta_{ij}^{-1}\bigr).
+\end{equation}
+
+\subsection{SVD-Based Initialisation}
+Rather than random initialisation, the latent factors are warm-started from the truncated SVD of the initial matrix (either the observation matrix $\bm{Z}$ or a full prediction matrix):
+\begin{equation}
+  \bm{Z}_{\text{init}} \approx \bm{U}_d \bm{\Sigma}_d^{1/2} \cdot (\bm{\Sigma}_d^{1/2} \bm{V}_d^\top)^\top,
+  \qquad
+  \bm{A}^{(0)} = \bm{U}_d \bm{\Sigma}_d^{1/2},\quad
+  \bm{B}^{(0)} = \bm{V}_d \bm{\Sigma}_d^{1/2},
+\end{equation}
+where $\bm{U}_d, \bm{\Sigma}_d, \bm{V}_d$ are from the rank-$d$ SVD. The initial covariances are set to $\bm{\Sigma}_{a_i}^{(0)} = \bm{\Sigma}_{b_j}^{(0)} = \alpha \bm{I}_d$ with $\alpha = 10^{-3}$.
+
+\subsection{Variational Bayesian Update Rules}
+The posterior of each latent vector is approximated as Gaussian. The coordinate-ascent updates are:
+
+\paragraph{Update $\bm{a}_i$ (row factor):}
+\begin{align}
+  \bm{\Sigma}_{a_i} &= \Bigl(\diag(\bm{\gamma})
+    + \!\!\sum_{j:\,(i,j)\in\Omega'}\!\! \beta_{ij}\bigl(\bm{\mu}_{b_j} \bm{\mu}_{b_j}^\top + \bm{\Sigma}_{b_j}\bigr)\Bigr)^{-1}, \label{eq:sigma_a}\\
+  \bm{\mu}_{a_i} &= \bm{\Sigma}_{a_i} \!\!\sum_{j:\,(i,j)\in\Omega'}\!\! \beta_{ij}\, z_{ij}\, \bm{\mu}_{b_j}. \label{eq:mu_a}
+\end{align}
+
+\paragraph{Update $\bm{b}_j$ (column factor):}
+\begin{align}
+  \bm{\Sigma}_{b_j} &= \Bigl(\diag(\bm{\gamma})
+    + \!\!\sum_{i:\,(i,j)\in\Omega'}\!\! \beta_{ij}\bigl(\bm{\mu}_{a_i} \bm{\mu}_{a_i}^\top + \bm{\Sigma}_{a_i}\bigr)\Bigr)^{-1}, \label{eq:sigma_b}\\
+  \bm{\mu}_{b_j} &= \bm{\Sigma}_{b_j} \!\!\sum_{i:\,(i,j)\in\Omega'}\!\! \beta_{ij}\, z_{ij}\, \bm{\mu}_{a_i}. \label{eq:mu_b}
+\end{align}
+
+\paragraph{Update $\gamma_k$ (ARD precision):}
+The expected second moments under the posterior are:
+\begin{equation}
+  \langle a_{ik}^2 \rangle = [\bm{\mu}_{a_i}]_k^2 + [\bm{\Sigma}_{a_i}]_{kk}, \qquad
+  \langle b_{jk}^2 \rangle = [\bm{\mu}_{b_j}]_k^2 + [\bm{\Sigma}_{b_j}]_{kk}.
+\end{equation}
+The M-step update for each ARD precision is:
+\begin{equation}\label{eq:gamma_update}
+  \gamma_k = \frac{2c + m + n}
+  {\displaystyle \sum_{i=1}^{m} \langle a_{ik}^2 \rangle
+  + \sum_{j=1}^{n} \langle b_{jk}^2 \rangle + 2d}.
+\end{equation}
+
+\subsection{Linearised Power-Flow Model}
+\label{sec:pf_model}
+The distribution network voltage is related to bus power injection through a linearised model. Let $\bm{Y}_{\text{bus}}$ be the bus admittance matrix partitioned into slack (bus~0, three phases) and non-slack nodes:
+\begin{equation}
+  \bm{Y}_{\text{bus}} = \begin{bmatrix} \bm{Y}_{00} & \bm{Y}_{0n} \\ \bm{Y}_{n0} & \bm{Y}_{nn} \end{bmatrix}.
+\end{equation}
+
+\paragraph{No-load voltage.} With known slack-bus voltage $\bm{v}_0 = [1,\, a^2,\, a]^\top$ where $a = e^{j2\pi/3}$:
+\begin{equation}\label{eq:w}
+  \bm{w} = -\bm{Y}_{nn}^{-1}\bm{Y}_{n0}\bm{v}_0 = -\bm{Z}_{nn}\bm{Y}_{n0}\bm{v}_0,
+\end{equation}
+where $\bm{Z}_{nn} = \bm{Y}_{nn}^{-1}$ is the bus impedance matrix.
+
+\paragraph{Complex voltage sensitivity.} The linearised voltage response to power injection is $\bm{v} \approx \bm{w} + \bm{M}\bm{p}$, where:
+\begin{equation}\label{eq:M}
+  \bm{M} = \bigl[\bm{Z}_{nn}\diag(\bar{\bm{w}})^{-1}\;\big|\; -j\,\bm{Z}_{nn}\diag(\bar{\bm{w}})^{-1}\bigr] \in \mathbb{C}^{m \times 2m},
+\end{equation}
+and $\bm{p} = [P_1,\dots,P_m, Q_1,\dots,Q_m]^\top$ is the power injection vector. The factor $\diag(\bar{\bm{w}})^{-1}$ arises from the linearisation of the power balance equation $S_i = V_i \bar{I}_i$ around the no-load operating point.
+
+\paragraph{Voltage magnitude sensitivity.} Applying a first-order expansion of $|V_i| = |w_i + \Delta V_i| \approx |w_i| + \mathrm{Re}(\bar{w}_i \Delta V_i / |w_i|)$:
+\begin{equation}\label{eq:K}
+  |\bm{v}| \approx |\bm{w}| + \bm{K}\bm{p},
+  \qquad
+  \bm{K} = \diag(|\bm{w}|)^{-1}\,\mathrm{Re}\!\bigl(\diag(\bar{\bm{w}})\,\bm{M}\bigr) \in \R^{m \times 2m}.
+\end{equation}
+
+\paragraph{High-impedance node isolation.} Floating (high-impedance) nodes whose diagonal entry $|[\bm{Z}_{nn}]_{ii}| > Z_{\text{thresh}}$ are detected and isolated by zeroing their rows and columns in $\bm{Z}_{nn}$ and resetting $w_i = 1.0$, preventing numerical instability in $\bm{M}$ and $\bm{K}$.
+
+\subsection{Physics-Constrained Iterative Algorithm}
+\label{sec:physics_iter}
+The physics model is integrated into the BMC framework through an iterative alternating scheme. Two strategies are used depending on the Stage~1 predictor.
+
+\paragraph{Strategy A: Augmented observation (MTGP predictor).}
+For buses without direct voltage measurements ($(i, j_V) \notin \Omega$ where $j_V \in \{3,4,5\}$ for $V_r, V_i, |V|$ columns), physics-derived pseudo-observations are injected into the augmented set $\Omega' \supseteq \Omega$ with a high precision:
+\begin{equation}\label{eq:augmented}
+  z_{i,j_V}^{(t)} = [\bm{X}^{(t-1)}]_{i,j_V}, \quad
+  \beta_{i,j_V} = \beta_{\text{phys}},
+\end{equation}
+where $\bm{X}^{(t-1)}$ is the reconstructed matrix from the previous iteration (with physics projection applied). This feedback loop allows the Bayesian factors to ``see'' the physics constraint.
+
+\paragraph{Strategy B: Full physics projection (Linear predictor).}
+All voltage columns are overwritten by the physics model after each Bayesian update:
+\begin{align}
+  \bm{v}^{(t)} &= \bm{w} + \bm{M}\, \bm{p}^{(t)}, \label{eq:v_complex}\\
+  |\bm{v}|^{(t)} &= |\bm{w}| + \bm{K}\, \bm{p}^{(t)}, \label{eq:v_mag}
+\end{align}
+where $\bm{p}^{(t)} = [P^{(t)}_1/(S_{\text{base}}),\dots, Q^{(t)}_m/(S_{\text{base}})]^\top$ is extracted from the current factor product $\bm{A}^{(t)}(\bm{B}^{(t)})^\top$.
+
+\paragraph{Complete iteration.}  Each iteration $t$ proceeds as:
+\begin{enumerate}[nosep]
+  \item \textbf{Feedback:} Update pseudo-observations $z_{i,j_V}^{(t)} \leftarrow [\bm{X}^{(t-1)}]_{i,j_V}$ for $(i,j_V) \in \Omega' \setminus \Omega$;
+  \item \textbf{A-step:} Update each $\bm{\mu}_{a_i}, \bm{\Sigma}_{a_i}$ via Eq.~\eqref{eq:sigma_a}--\eqref{eq:mu_a};
+  \item \textbf{B-step:} Update each $\bm{\mu}_{b_j}, \bm{\Sigma}_{b_j}$ via Eq.~\eqref{eq:sigma_b}--\eqref{eq:mu_b};
+  \item \textbf{$\gamma$-step:} Update each $\gamma_k$ via Eq.~\eqref{eq:gamma_update};
+  \item \textbf{Reconstruct:} $\bm{X}^{(t)} = \bm{A}^{(t)}(\bm{B}^{(t)})^\top$;
+  \item \textbf{Physics projection:} For unobserved voltage entries, overwrite with Eq.~\eqref{eq:v_complex}--\eqref{eq:v_mag};
+  \item \textbf{Convergence check:} Stop if $\|\bm{X}^{(t)} - \bm{X}^{(t-1)}\|_F / \|\bm{X}^{(t-1)}\|_F < \varepsilon$.
+\end{enumerate}
+
+\subsection{Adaptive Rank Selection}
+The latent dimension $d$ is selected automatically. For the MTGP predictor, two criteria are combined:
+\begin{enumerate}[nosep]
+  \item \textbf{Relative magnitude threshold:} retain singular values $\sigma_k > \max(\eta_{\text{noise}}, 0.02)\cdot \sigma_1$;
+  \item \textbf{Cumulative energy:} retain the smallest $d$ such that $\sum_{k=1}^{d}\sigma_k^{2} / \sum_{k}\sigma_k^{2} \ge \rho$, where $\rho = 0.95$ for high noise ($\ge 10\%$) and $0.99$ otherwise.
+\end{enumerate}
+The final rank is $d = \min(d_{\text{mag}},\, d_{\text{energy}})$, clamped to $[2, 4]$.
+
+For the linear predictor, an enhanced selection combines: (i) the 95\% energy criterion, (ii) the Gavish--Donoho optimal threshold $\tau = \omega(\beta)\cdot \mathrm{median}(\sigma_k)$ where $\beta = \min(m,n)/\max(m,n)$ and $\omega(\beta) \approx 0.56\beta^3 - 0.95\beta^2 + 1.82\beta + 1.43$, and (iii) a noise-based threshold $\sigma_k > 5\eta_{\text{noise}}\sigma_1$. The final rank is $d = \max(d_{\text{energy}}, d_{\text{GD}}, d_{\text{noise}})$, clamped to $[3, 10]$.
+
+\subsection{Uncertainty Quantification}
+\label{sec:uncertainty}
+The posterior variance of the reconstructed matrix entry $\hat{z}_{ij} = \bm{\mu}_{a_i}^\top \bm{\mu}_{b_j}$ is obtained in closed form.
+
+Since $\bm{a}_i \sim \N(\bm{\mu}_{a_i}, \bm{\Sigma}_{a_i})$ and $\bm{b}_j \sim \N(\bm{\mu}_{b_j}, \bm{\Sigma}_{b_j})$ are assumed independent a posteriori, we have:
+\begin{align}
+  \mathbb{E}[\hat{z}_{ij}^2]
+  &= \mathbb{E}[\bm{a}_i^\top \bm{b}_j \bm{b}_j^\top \bm{a}_i]
+  = \tr\!\bigl((\bm{\mu}_{a_i}\bm{\mu}_{a_i}^\top + \bm{\Sigma}_{a_i})
+  (\bm{\mu}_{b_j}\bm{\mu}_{b_j}^\top + \bm{\Sigma}_{b_j})\bigr), \\
+  (\mathbb{E}[\hat{z}_{ij}])^2
+  &= (\bm{\mu}_{a_i}^\top \bm{\mu}_{b_j})^2.
+\end{align}
+Expanding and cancelling the $(\bm{\mu}_{a_i}^\top\bm{\mu}_{b_j})^{2}$ term yields:
+\begin{equation}\label{eq:var_z}
+  \boxed{\mathrm{Var}(\hat{z}_{ij})
+  = \underbrace{\tr\!\bigl(\bm{\Sigma}_{a_i}\bm{\Sigma}_{b_j}\bigr)}_{\text{interaction noise}}
+  + \underbrace{\bm{\mu}_{a_i}^\top \bm{\Sigma}_{b_j}\bm{\mu}_{a_i}}_{\text{B-uncertainty projected onto A-mean}}
+  + \underbrace{\bm{\mu}_{b_j}^\top \bm{\Sigma}_{a_i}\bm{\mu}_{b_j}}_{\text{A-uncertainty projected onto B-mean}}}.
+\end{equation}
+
+% ============================================================
+% 3. Posterior Structural Probability Inference
+% ============================================================
+\section{Posterior Structural Probability Inference}
+\label{sec:posterior}
+
+\subsection{Prediction Interval Construction}
+Under the Gaussian posterior assumption, the $(1-\alpha)$ prediction interval for state variable $\hat{z}_{ij}$ is:
+\begin{equation}\label{eq:pi}
+  \hat{z}_{ij} \pm z_{1-\alpha/2}\, \sqrt{\mathrm{Var}(\hat{z}_{ij})},
+\end{equation}
+where $z_{1-\alpha/2}$ is the standard normal quantile (e.g., $z_{0.975} = 1.96$ for 95\% confidence).
+
+\paragraph{Prediction Interval Coverage Probability (PICP):}
+\begin{equation}
+  \mathrm{PICP} = \frac{1}{n}\sum_{i=1}^{n} \mathbf{1}\!\bigl[z_i^{\text{true}} \in [\hat{z}_i - z_{1-\alpha/2}\hat{\sigma}_i,\; \hat{z}_i + z_{1-\alpha/2}\hat{\sigma}_i]\bigr].
+\end{equation}
+A well-calibrated model achieves $\mathrm{PICP} \approx (1-\alpha)\times 100\%$.
+
+\paragraph{Mean Prediction Interval Width (MPIW):}
+\begin{equation}
+  \mathrm{MPIW} = \frac{1}{n}\sum_{i=1}^{n} 2\, z_{1-\alpha/2}\, \hat{\sigma}_i.
+\end{equation}
+A smaller MPIW indicates tighter (more informative) intervals.
+
+\subsection{Voltage Angle Uncertainty Propagation}
+The voltage angle $\theta = \arctan(V_i / V_r)$ is a nonlinear function of the estimated real and imaginary voltage components. Its uncertainty is obtained via the delta method (first-order Taylor expansion):
+\begin{equation}
+  \frac{\partial \theta}{\partial V_r} = \frac{-V_i}{V_r^2 + V_i^2}, \qquad
+  \frac{\partial \theta}{\partial V_i} = \frac{V_r}{V_r^2 + V_i^2}.
+\end{equation}
+Assuming $V_r$ and $V_i$ are uncorrelated a posteriori (valid since they occupy different columns of the factorised matrix):
+\begin{equation}\label{eq:angle_std}
+  \sigma_\theta \approx \frac{\sqrt{V_r^{2}\,\sigma_{V_i}^{2} + V_i^{2}\,\sigma_{V_r}^{2}}}{V_r^{2} + V_i^{2}},
+\end{equation}
+where $\sigma_{V_r}, \sigma_{V_i}$ are the posterior standard deviations from Eq.~\eqref{eq:var_z}.
+
+\subsection{Point-Estimate Error Metrics}
+The following metrics are used to evaluate reconstruction quality:
+
+\paragraph{Mean Integrated Absolute Error (MIAE):}
+For power and voltage angle:
+\begin{equation}
+  \mathrm{MIAE} = \frac{1}{n}\sum_{i=1}^{n} |z_i^{\text{true}} - \hat{z}_i| \times 100\%.
+\end{equation}
+
+\paragraph{Mean Absolute Percentage Error (MAPE):}
+For voltage magnitude:
+\begin{equation}
+  \mathrm{MAPE} = \frac{1}{n}\sum_{i=1}^{n} \frac{|z_i^{\text{true}} - \hat{z}_i|}{|z_i^{\text{true}}|} \times 100\%.
+\end{equation}
+
+\end{document}
